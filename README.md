@@ -1,75 +1,53 @@
-# Modélisation et Vérification d’une Application E-Commerce avec Akka et Réseaux de Pétri
+# CY-Commerce : Système de vente distribué et vérification formelle
 
-Bienvenue dans le dépôt du projet ! Ce projet s'inscrit dans le cadre de notre module sur les **Systèmes Distribués et la Programmation Fonctionnelle**.
+Ce projet implémente un système de gestion de commandes e-commerce en utilisant le modèle d'acteurs pour la partie applicative et les réseaux de Pétri pour la validation formelle. L'objectif est de démontrer comment la théorie mathématique permet d'anticiper des erreurs de conception dans un système distribué.
 
-Il a pour but de modéliser, implémenter et vérifier mathématiquement un scénario critique au sein d'une application distribuée : **La validation d'une commande et la gestion concurrente des stocks dans un e-commerce.**
+## 1. Architecture du Système
 
----
+Le projet est divisé en deux modules distincts mais complémentaires, tous deux développés en Scala.
 
-## 📌 1. Contexte & Choix Techniques
+### Implémentation Akka (Traitement des flux)
+Nous utilisons Akka Typed pour gérer la logique métier. Le modèle d'acteurs est particulièrement adapté ici car il garantit l'encapsulation de l'état et l'absence de verrous partagés.
 
-Pour répondre aux exigences de robustesse d'un système distribué critique, nous avons conçu l'architecture suivante :
-* Conception basée sur le **Modèle d'Acteurs** avec **Scala et Akka Typed**.
-* Architecture **totalement asynchrone et distribuée par envois de messages**, garantissant une forte tolérance aux pannes et l'absence de blocages liés à des ressources partagées.
-* Création d'un **moteur "Fait-Maison" de Réseaux de Pétri** en Scala (comme exigé par la consigne qui interdisait l'utilisation de logiciels externes).
+*   **ClientActor** : Agit comme l'interface utilisateur, initiant les commandes de manière asynchrone.
+*   **MagasinActor** : Gère l'état du stock. Puisqu'un acteur traite ses messages de manière séquentielle dans sa "mailbox", les problèmes de concurrence (Race Conditions) sont résolus par nature : il est impossible que deux transactions décrémentent le stock simultanément de façon erronée.
+*   **LivraisonActor** : Un service tiers simulé qui ne reçoit d'ordres que si le MagasinActor a validé la disponibilité des produits.
 
-## ⚙️ 2. L'Application Akka (La Pratique)
+### Moteur de Pétri (Vérification formelle)
+Contrairement à l'utilisation de logiciels tiers (type TINA ou CPN Tools), nous avons développé un moteur d'exécution de réseaux de Pétri intégré au projet. Il permet d'explorer l'espace d'états complet du système pour vérifier des propriétés logiques.
 
-Le scénario critique est géré par trois Acteurs principaux :
-1. **`ClientActor`** : Représente l'utilisateur. Il envoie des demandes d'achats.
-2. **`MagasinActor`** : **C'est la brique critique.** Il gère l'état du stock. Grâce à la nature des Acteurs Akka (qui traitent les messages séquentiellement un par un), **les "Race Conditions" sont impossibles**. Deux clients ne peuvent pas acheter le même dernier produit en même temps.
-3. **`LivraisonActor`** : Planifie la livraison si le `MagasinActor` valide la transaction.
+## 2. Analyse Théorique et Propriétés LTL
 
-Dans le fichier `Main.scala`, nous simulons un **Stress Test** :
-* 2 PC-Gamer sont en stock.
-* Alice en demande 1.
-* Bob arrive au même moment et en demande 2. 
-* *Résultat attendu : Alice est servie, Bob reçoit un refus poli, le système ne crash pas et ne bloque pas.*
+Le dossier `com/cycommerce/petrinet` contient la logique de vérification. Nous modélisons le processus d'achat par des places (Stock, Demande, Validation) et des transitions.
 
-## 🧮 3. Réseau de Pétri & Logique LTL (La Théorie)
+### Invariant de Sûreté (Safety)
+L'algorithme vérifie par induction sur le graphe d'accessibilité que la propriété **Stock >= 0** est un invariant. Peu importe l'ordre ou le nombre de demandes, le système ne peut jamais tomber dans un état où le stock est négatif.
 
-Dans le dossier `com/cy-commerce/petrinet`, nous avons codé un simulateur mathématique. Nous avons défini des *Places* (Stock, Demande_Client, etc.) et des *Transitions* (Valider_Commande).
+### Propriété de Vivacité et Deadlock
+Nous avons testé la propriété de vivacité suivante en Logique Temporelle Linéaire (LTL) :
+`[] (Demande_Passée => <> Commande_Validée)`
+*(Il est toujours vrai que si une demande est passée, elle sera éventuellement validée).*
 
-L'algorithme LTL et Model Checking (`VerificationEngine.scala`) analyse tous les états possibles et prouve 2 choses :
+**Observation critique :** Le moteur de vérification identifie un **Deadlock** (blocage) lorsque le stock atteint zéro. Dans un modèle mathématique pur, la transition de validation ne peut plus être franchie, laissant le jeton "Demande" bloqué indéfiniment. 
 
-1. **Un Invariant de Sûreté (Safety)** : `Stock_Magasin >= 0`. L'algorithme vérifie tous les chemins et prouve mathématiquement que le stock ne sera jamais négatif.
-2. **Une propriété de Vivacité (Liveness / LTL)** : `[] (Demande_Passée => <> Commande_Validee)` (*"Il est Toujours vrai que si une Demande est passée, alors Eventuellement elle sera Validée"*).
-   * L'algorithme trouve un **DEADLOCK (Famine / Starvation)** ! 
-   * S'il y a 3 demandes pour 2 produits en stock, l'algorithme de Pétri bloque complètement. Le 3ème client tourne dans le vide à jamais.
-   * **La Conclusion** : Cette faille théorique prouve l'importance de ce que nous avons implémenté côté Akka : le renvoi explicite d'un message `StockInsuffisant` pour briser l'attente et éviter le deadlock dans la réalité.
+**Application pratique :** Cette découverte nous a conduits à implémenter une branche alternative dans notre code Akka : l'envoi d'un message `StockInsuffisant`. Cela permet de "consommer" la demande même en cas d'échec, évitant ainsi que l'acteur client ne reste en attente indéfinie.
 
----
+## 3. Scénario de Test (Stress Test)
 
-## 🚀 4. Comment exécuter le projet et lancer les tests ?
+Le fichier `Main.scala` exécute la simulation suivante :
+1.  Initialisation d'un stock de 2 unités.
+2.  Alice envoie une commande pour 1 unité.
+3.  Bob, au même instant, envoie une commande pour 2 unités.
+4.  Le système traite Alice (Stock restant : 1), puis refuse Bob car le stock est insuffisant pour sa demande spécifique.
+5.  Le système reste stable et prêt à recevoir de nouvelles commandes.
+
+## 4. Instructions d'Exécution
 
 ### Prérequis
-* Avoir installé **Java (JDK 11 ou plus)**
-* Avoir installé **sbt** (Scala Build Tool). Dans Visual Studio Code, l'extension *Metals* peut s'en charger.
+*   Java JDK 11 ou supérieur.
+*   sbt (Scala Build Tool).
 
-Ouvrez un terminal (`Terminal -> New Terminal` sous VS Code) et placez-vous dans le dossier du projet :
-```bash
-cd CY-Commerce
-```
-
-### Étape A : Lancer la Preuve Mathématique (Réseau de Pétri)
-Executez la commande suivante pour lancer le moteur d'analyse :
+### Lancer la vérification de Pétri
+Cette commande exécute l'analyseur formel qui prouve les invariants et détecte les blocages théoriques.
 ```bash
 sbt "runMain com.cycommerce.petrinet.EcommerceModel"
-```
-**Ce que vous allez voir :** Le parcours formel des 3 états du système et les preuves des invariants. La console va vous alerter ("DANGER LTL") sur le fait que le système mathématique pur risque un blocage si le stock est vide.
-
-### Étape B : Lancer l'Application Akka
-Executez la commande suivante pour jouer le scénario réel distribué :
-```bash
-sbt "runMain com.cycommerce.Main"
-```
-**Ce que vous allez voir :** L'échange de messages asynchrones. Alice recevra ses produits, le stock descendra, et l'Acteur Akka rejettera la commande de Bob en évitant brillamment le fameux "Deadlock" théorique calculé à l'étape A.
-
----
-
-## 📝 5. Travail à faire pour le livrable (Le PDF Final)
-
-Pour l'équipe, voici ce qu'il nous reste à rédiger dans le rapport final :
-- [ ] **Sources LTL & Petri** : Trouver 2-3 liens bibliographiques qui définissent ce qu'est la logique temporelle et les réseaux de Pétri.
-- [ ] **Dessin du Réseau** : Faire un schéma (sur Draw.io par exemple) de nos 3 Places (Ronds) reliées à la transition `T_ValiderCommande` (Rectangle). 
-- [ ] **Intégration des Logs** : Copier-coller le résultat des terminaux A et B dans le rapport en expliquant que la théorie trouve un blocage, mais que notre conception Akka l'évite par l'envoi de messages compensatoires.
