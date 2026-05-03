@@ -6,14 +6,14 @@ Il a pour but de modéliser, implémenter et vérifier mathématiquement un scé
 
 ---
 
-## 📌 1. Contexte & Choix Techniques
+## 1. Contexte & Choix Techniques
 
 Pour répondre aux exigences de robustesse d'un système distribué critique, nous avons conçu l'architecture suivante :
 * Conception basée sur le **Modèle d'Acteurs** avec **Scala et Akka Typed**.
 * Architecture **totalement asynchrone et distribuée par envois de messages**, garantissant une forte tolérance aux pannes et l'absence de blocages liés à des ressources partagées.
 * Création d'un **moteur "Fait-Maison" de Réseaux de Pétri** en Scala (comme exigé par la consigne qui interdisait l'utilisation de logiciels externes).
 
-## ⚙️ 2. L'Application Akka (La Pratique)
+## 2. L'Application Akka (La Pratique)
 
 Le scénario critique est géré par trois Acteurs principaux :
 1. **`ClientActor`** : Représente l'utilisateur. Il envoie des demandes d'achats.
@@ -26,7 +26,7 @@ Dans le fichier `Main.scala`, nous simulons un **Stress Test** :
 * Bob arrive au même moment et en demande 2. 
 * *Résultat attendu : Alice est servie, Bob reçoit un refus poli, le système ne crash pas et ne bloque pas.*
 
-## 🧮 3. Réseau de Pétri & Logique LTL (La Théorie)
+## 3. Réseau de Pétri & Logique LTL (La Théorie)
 
 Dans le dossier `com/cy-commerce/petrinet`, nous avons codé un simulateur mathématique. Nous avons défini des *Places* (Stock, Demande_Client, etc.) et des *Transitions* (Valider_Commande).
 
@@ -40,7 +40,7 @@ L'algorithme LTL et Model Checking (`VerificationEngine.scala`) analyse tous les
 
 ---
 
-## 🚀 4. Comment exécuter le projet et lancer les tests ?
+## 4. Comment exécuter le projet et lancer les tests ?
 
 ### Prérequis
 * Avoir installé **Java (JDK 11 ou plus)**
@@ -64,12 +64,3 @@ Executez la commande suivante pour jouer le scénario réel distribué :
 sbt "runMain com.cycommerce.Main"
 ```
 **Ce que vous allez voir :** L'échange de messages asynchrones. Alice recevra ses produits, le stock descendra, et l'Acteur Akka rejettera la commande de Bob en évitant brillamment le fameux "Deadlock" théorique calculé à l'étape A.
-
----
-
-## 📝 5. Travail à faire pour le livrable (Le PDF Final)
-
-Pour l'équipe, voici ce qu'il nous reste à rédiger dans le rapport final :
-- [ ] **Sources LTL & Petri** : Trouver 2-3 liens bibliographiques qui définissent ce qu'est la logique temporelle et les réseaux de Pétri.
-- [ ] **Dessin du Réseau** : Faire un schéma (sur Draw.io par exemple) de nos 3 Places (Ronds) reliées à la transition `T_ValiderCommande` (Rectangle). 
-- [ ] **Intégration des Logs** : Copier-coller le résultat des terminaux A et B dans le rapport en expliquant que la théorie trouve un blocage, mais que notre conception Akka l'évite par l'envoi de messages compensatoires.
